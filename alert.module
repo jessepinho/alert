@@ -1,0 +1,231 @@
+<?php
+/**
+ * @file
+ * Provide an API for displaying user alerts.
+ */
+
+/**
+ * Load an alert object or objects, based on a number of arguments.
+ *
+ * @param $args
+ *   An array of arguments based on the fields of the alert table ('a_' prefix
+ *   optional). To use an operator with any field, set an additional array item
+ *   with the field's name and the suffix '_operator'. So, for example, to find
+ *   all alerts displayed after a given timestamp, $args should contain the
+ *   following items:
+ *   - 'displayed' => 1317826800
+ *   - 'displayed_operator' => '>'
+ */
+function alert_load($args) {
+  _alert_check_prefix($args);
+  
+  $query = db_select('alert', 'a')
+    ->fields('a');
+  
+  // Iterate through the arguments and add them as conditions
+  foreach ($args as $key => $val) {
+    // The operators aren't conditions of their own, so skip them.
+    if (substr($key, -9) == '_operator') {
+      continue;
+    }
+    $operator = NULL;
+    
+    // If there is a custom operator for this condition, use it.
+    if (isset($args[$key . '_operator'])) {
+      $operator = $args[$key . '_operator'];
+      // To optimize future foreach()'s:
+      unset($args[$key . '_operator']);
+    }
+    
+    // Add the condish.
+    $query->condition($key, $val, $operator);
+  }
+  return $query->execute()->fetchAll();
+}
+
+/**
+ * Create or update an alert.
+ *
+ * @param $alert
+ *   An alert object. If updating an existing alert, it is only necessary to
+ *   set the aid and any properties that should be changed, as alert_save()
+ *   uses drupal_write_record(). The alert object can contain the following
+ *   properties:
+ *   - id: The id of an existing alert. This should only be set if an
+ *     existing alert is being updated.
+ *   - uid: The uid of the user to whom the alert should be displayed. This
+ *     should almost never be set to 0. If set to 0, the next anonymous user to
+ *     view a page will see this alert.
+ *   - reference: Optional. An arbitrary string modules can use as a reference
+ *     to alerts of this type, so as to retrieve it later. For example, a
+ *     module called 'example' that is setting an alert related to a user
+ *     signup could set the alert reference to 'example_user_signup'. A module
+ *     should use its name as the prefix for namespace reasons.
+ *   - type: Optional. The message type to use with drupal_set_message().
+ *     Possible types:
+ *     - 'status' (default)
+ *     - 'warning'
+ *     - 'error'
+ *   - repeat: Optional. A boolean indicating whether to repeat a message if it
+ *     has already been set. (See documentation for drupal_set_message().)
+ *     Default: 0
+ *   - displayed: Optional. The UNIX timestamp when the alert was last
+ *     displayed.
+ *   - status: Optional. A boolean indicating whether this alert is still
+ *     active. If status_auto field is set to 1, then a status of 1 means it is
+ *     active because it has not been displayed; 2 means it is inactive because
+ *     it has already been displayed. Default: 1
+ *   - status_auto: Optional. A boolean indicating whether this alert's status
+ *     should be automatically set to 0 when it has been displayed. If this is
+ *     set to 0, the module that created the alert will be responsible for
+ *     updating its status. Default: 1
+ *   - message: The alert message.
+ * @param $prevent_loop
+ *   Internal use only. Used to prevent an infinite loop when the current user
+ *   is the same as the user to whom this message is targeted (due to the call
+ *   to alert_display() within alert_save()).
+ *
+ * @return
+ *   If the record insert or update failed, returns FALSE. If it succeeded,
+ *   returns SAVED_NEW or SAVED_UPDATED, depending on the operation performed.
+ */
+function alert_save($alert, $prevent_loop = FALSE) {
+  global $user;
+  _alert_check_prefix($alert);
+  $alert = (object)$alert;
+  
+  // If this is a new alert, set defaults. Note that, if this is a new alert,
+  // all fields (except 'a_id') without defaults specified here should be
+  // explicitly set by the calling code.
+  if (!isset($alert->a_id)) {
+    $is_new = TRUE;
+    $alert->a_created = REQUEST_TIME;
+    $defaults = array(
+      'a_type' => 'status',
+      'a_repeat' => 0,
+      'a_status' => 1,
+      'a_status_auto' => 1,
+    );
+    foreach ($defaults as $key => $val) {
+      if (!isset($alert->$key)) {
+        $alert->$key = $val;
+      }
+    }
+  } else {
+    $is_new = FALSE;
+  }
+  
+  // Always update the changed timestamp.
+  $alert->a_changed = REQUEST_TIME;
+  
+  // Make sure all booleans are converted to integers for insertion into the
+  // database.
+  $alert->a_repeat      = (int)$alert->a_repeat;
+  $alert->a_status      = (int)$alert->a_status;
+  $alert->a_status_auto = (int)$alert->a_status_auto;
+  
+  if ($is_new) {
+    // Save the new alert.
+    $return = drupal_write_record('alert', $alert);
+  } else {
+    // Update the existing alert.
+    $return = drupal_write_record('alert', $alert, 'a_id');
+  }
+  
+  // If the user to whom the alert should be displayed is the currently logged-
+  // in user, display the alert immediately (or it will be delayed until the
+  // next call of alert_init()).
+  if ($return
+    && $user->uid == $alert->a_uid
+    && !$prevent_loop) {
+    alert_display($alert);
+  }
+  
+  return $return;
+}
+
+/**
+ * Display an alert via drupal_set_message().
+ *
+ * @param $alert
+ *   A fully-populated alert object to be displayed.
+ */
+function alert_display($alert) {
+  _alert_check_prefix($alert);
+  drupal_set_message($alert->a_message, $alert->a_type, $alert->a_repeat);
+  
+  // Update the alert.
+  if ($alert->a_status_auto) {
+    $alert->a_status = 0;
+  }
+  $alert->a_displayed = REQUEST_TIME;
+  alert_save($alert, TRUE);
+}
+
+/**
+ * Implements hook_init().
+ *
+ * Find all alerts for the current user with a status of 1, and display them.
+ */
+function alert_init() {
+  global $user;
+
+  $alerts = alert_load(array('a_uid' => $user->uid, 'a_status' => 1));
+  foreach ($alerts as $alert) {
+    alert_display($alert);
+  }
+}
+
+/**
+ * Utility function; make sure all $alert properties are prefixed with 'a_' to
+ * avoid SQL reserved words conflicts.
+ *
+ * This allows $alert objects (and $args arrays, in the case of alert_load())
+ * to have keys/properties without the 'a_' prefix.
+ *
+ * $alert is passed in by reference, in case it's an array.
+ */
+function _alert_check_prefix(&$alert) {
+  foreach ($alert as $key => $val) {
+    if (substr($key, 0, 2) != 'a_') {
+      if (is_object($alert)) {
+        $alert->{'a_' . $key} = $val;
+        unset($alert->$key);
+      } else if (is_array($alert)) {
+        $alert["a_$key"] = $val;
+        unset($alert[$key]);
+      }
+    }
+  }
+}
+
+/**
+ * Call drupal_set_message() for a particular user.
+ *
+ * In practice, this function is a carbon copy of drupal_set_message(), but
+ * with the additional $uid parameter at the beginning, denoting the user to
+ * whom to display the message the next time she logs in.
+ *
+ * Basically, this function is shorthand for alert_save().
+ *
+ * @param $uid
+ *   The uid of the user to whom to display the message.
+ * @param $message
+ *   The message.
+ * @param $type
+ *   The message type. Possible values:
+ *   - 'status' (default)
+ *   - 'warning'
+ *   - 'error'
+ * @param $repeat
+ *   A boolean indicating whether to repeat a message if it has already been
+ *   set. (See documentation for drupal_set_message().) Default: FALSE
+ */
+function drupal_set_message_for_user($uid, $message, $type = 'status', $repeat = FALSE) {
+  $alert = new stdClass;
+  $alert->a_uid = $uid;
+  $alert->a_message = $message;
+  $alert->a_type = $type;
+  $alert->a_repeat = $repeat;
+  alert_save($alert);
+}
