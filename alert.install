@@ -84,6 +84,6 @@ function alert_schema() {
     ),
     'primary key' => array('a_id'),
   );
-  
+
   return $schema;
 }

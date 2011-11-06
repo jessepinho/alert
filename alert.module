@@ -18,25 +18,25 @@
  */
 function alert_load($args) {
   _alert_check_prefix($args);
-  
+
   $query = db_select('alert', 'a')
     ->fields('a');
-  
+
   // Iterate through the arguments and add them as conditions
   foreach ($args as $key => $val) {
     // The operators aren't conditions of their own, so skip them.
-    if (substr($key, -9) == '_operator') {
+    if (drupal_substr($key, -9) == '_operator') {
       continue;
     }
     $operator = NULL;
-    
+
     // If there is a custom operator for this condition, use it.
     if (isset($args[$key . '_operator'])) {
       $operator = $args[$key . '_operator'];
       // To optimize future foreach()'s:
       unset($args[$key . '_operator']);
     }
-    
+
     // Add the condish.
     $query->condition($key, $val, $operator);
   }
@@ -93,7 +93,7 @@ function alert_save($alert, $prevent_loop = FALSE) {
   global $user;
   _alert_check_prefix($alert);
   $alert = (object)$alert;
-  
+
   // If this is a new alert, set defaults. Note that, if this is a new alert,
   // all fields (except 'a_id') without defaults specified here should be
   // explicitly set by the calling code.
@@ -111,27 +111,29 @@ function alert_save($alert, $prevent_loop = FALSE) {
         $alert->$key = $val;
       }
     }
-  } else {
+  }
+  else {
     $is_new = FALSE;
   }
-  
+
   // Always update the changed timestamp.
   $alert->a_changed = REQUEST_TIME;
-  
+
   // Make sure all booleans are converted to integers for insertion into the
   // database.
-  $alert->a_repeat      = (int)$alert->a_repeat;
-  $alert->a_status      = (int)$alert->a_status;
+  $alert->a_repeat = (int)$alert->a_repeat;
+  $alert->a_status = (int)$alert->a_status;
   $alert->a_status_auto = (int)$alert->a_status_auto;
-  
+
   if ($is_new) {
     // Save the new alert.
     $return = drupal_write_record('alert', $alert);
-  } else {
+  }
+  else {
     // Update the existing alert.
     $return = drupal_write_record('alert', $alert, 'a_id');
   }
-  
+
   // If the user to whom the alert should be displayed is the currently logged-
   // in user, display the alert immediately (or it will be delayed until the
   // next call of alert_init()).
@@ -140,7 +142,7 @@ function alert_save($alert, $prevent_loop = FALSE) {
     && !$prevent_loop) {
     alert_display($alert);
   }
-  
+
   return $return;
 }
 
@@ -153,7 +155,7 @@ function alert_save($alert, $prevent_loop = FALSE) {
 function alert_display($alert) {
   _alert_check_prefix($alert);
   drupal_set_message($alert->a_message, $alert->a_type, $alert->a_repeat);
-  
+
   // Update the alert.
   if ($alert->a_status_auto) {
     $alert->a_status = 0;
@@ -187,11 +189,12 @@ function alert_init() {
  */
 function _alert_check_prefix(&$alert) {
   foreach ($alert as $key => $val) {
-    if (substr($key, 0, 2) != 'a_') {
+    if (drupal_substr($key, 0, 2) != 'a_') {
       if (is_object($alert)) {
         $alert->{'a_' . $key} = $val;
         unset($alert->$key);
-      } else if (is_array($alert)) {
+      }
+      elseif (is_array($alert)) {
         $alert["a_$key"] = $val;
         unset($alert[$key]);
       }

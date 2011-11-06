@@ -48,6 +48,21 @@ function alert_rules_action_info() {
   );
 }
 
+/**
+ * Action: Save a new alert.
+ *
+ * @param $vars
+ *   An array with the following keys:
+ *   - uid (optional): A user object of the user who should see the alert. (If
+ *     left empty, the anonymous user will be used. This is not recommended.)
+ *   - reference (optional): An arbitrary string modules can use as a reference
+ *     to alerts of this type, so as to retrieve it later.
+ *   - type (optional): The message type to use with drupal_set_message(). (If
+ *     left empty, "status" will be used.)
+ *   - repeat (optional): Whether to display the same message multiple times if
+ *     it is set multiple times. (If left empty, it will be set to FALSE.)
+ *   - message: The message to display to the user.
+ */
 function alert_save_action($vars) {
   // Don't set an alert if the user wasn't logged in.
   if (!is_object($vars['uid'])) {
