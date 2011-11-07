@@ -1,3 +1,0 @@
-name = Alert
-description = Provides an API for displaying user alerts.
-core = 7.x
