@@ -47,10 +47,10 @@ function alert_load($args) {
  * Create or update an alert.
  *
  * @param $alert
- *   An alert object. If updating an existing alert, it is only necessary to
- *   set the aid and any properties that should be changed, as alert_save()
- *   uses drupal_write_record(). The alert object can contain the following
- *   properties:
+ *   An alert object or array. If updating an existing alert, it is only
+ *   necessary to set the aid and any fields that should be changed, as
+ *   alert_save() uses drupal_write_record(). The alert object/array can
+ *   contain the following properties:
  *   - id: The id of an existing alert. This should only be set if an
  *     existing alert is being updated.
  *   - uid: The uid of the user to whom the alert should be displayed. This
